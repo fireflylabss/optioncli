@@ -1,6 +1,6 @@
 # Maintainer: Gabriel <horizzon3507>
 pkgname=opt
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Option family CLI: dispatch, doctor, install and system utilities'
 arch=('x86_64')

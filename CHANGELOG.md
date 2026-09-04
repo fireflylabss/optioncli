@@ -15,6 +15,18 @@ Each release heading is the version and date; under it, a short summary ends wit
 
 </details>
 
+## v0.1.1-stable · 04/09/2026
+
+Refines doctor checks, help/menu routing, and install/update flows on the single `opt` surface. This version was made for CLI with a stable release channel on 04/09/2026 (v0.1.1-stable).
+
+- `opt doctor` tags every system dep as required or optional: `xdg-open` (req), `$EDITOR` (req), and `libmpv` (req, via `ldconfig`, `pkg-config`, or the `mpv` binary).
+- `opt doctor` checks GTK4, libadwaita, and VTE (req, via `pkg-config` with a `pacman -Q` fallback), plus optional `magick`|`convert`, clipboard providers, and `gio`/`trash`.
+- Optional media/docs deps stay visual-only: `cava`, `yt-dlp`, `ffmpeg`, and `pdftotext` report as `ausente (opc)` without changing the exit status.
+- `opt` menu and `opt help` print the same routing table (app | bins | cargo | AUR | about) with aliases `f`/`file` → files, `m` → music, `c` → cal.
+- `opt install` and `opt update` are now separate flows with `OPTION_PKG` supporting `cargo` | `yay` | `paru` | `pacman`, and `opt install family` installs the `option-family` metapackage in one AUR transaction.
+- New `option-family` metapackage (`packaging/aur-option-family/PKGBUILD`) depends on `opt` plus every Option app.
+- Various other small tweaks.
+
 ## v0.1.0-stable · 24/08/2026
 
 Initial Option-family CLI. This version was made for CLI with a stable release channel on 24/08/2026 (v0.1.0-stable).

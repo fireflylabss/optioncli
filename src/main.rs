@@ -15,7 +15,7 @@ mod sys;
 use std::env;
 use std::process::ExitCode;
 
-use apps::{all, find_binary, install_hint, lookup};
+use apps::{aliases, all, find_binary, install_hint, lookup};
 use run::run;
 
 const MENU_HEADER: &str = "◆ opt — the Option family";
@@ -52,14 +52,24 @@ fn main() -> ExitCode {
             doctor::report();
             ExitCode::SUCCESS
         }
-        "install" | "update" => {
+        "install" => {
             // `opt install` (all) or `opt install <app>...`
             let rest = &args[1..];
             if rest.is_empty() {
                 install::install_all();
                 ExitCode::SUCCESS
             } else {
-                install::install_many(rest)
+                install::install_many(rest, "install")
+            }
+        }
+        "update" => {
+            // `opt update` really updates: cargo --force / helper -Syu.
+            let rest = &args[1..];
+            if rest.is_empty() {
+                install::update_all();
+                ExitCode::SUCCESS
+            } else {
+                install::install_many(rest, "update")
             }
         }
         "sys" => sys::dispatch(&args[1..]),
@@ -99,9 +109,7 @@ fn print_menu() {
     println!();
     println!("{MENU_HEADER}");
     println!();
-    for spec in all() {
-        println!("  {:<9} {}   {}", spec.id, spec.mark, spec.about);
-    }
+    print_routing_table();
     println!();
     println!("  status      apps instalados + versões");
     println!("  doctor      dependências de sistema de cada app");
@@ -112,6 +120,34 @@ fn print_menu() {
     println!("  help        esta ajuda");
     println!();
     println!("  use    opt <app> [args...]    para rodar um app");
+    println!("  alias  {}", alias_line());
+}
+
+/// Full routing table: id | bins | cargo | AUR | about.
+/// Plain B&W text (no ANSI here); mirrors README "Routing & packages".
+fn print_routing_table() {
+    println!(
+        "  {:<9} {:<22} {:<16} {:<16} {}",
+        "app", "bins", "cargo", "aur", "about"
+    );
+    for spec in all() {
+        println!(
+            "  {:<9} {:<22} {:<16} {:<16} {}",
+            spec.id,
+            spec.bins.join(", "),
+            spec.cargo,
+            spec.aur,
+            spec.about
+        );
+    }
+}
+
+fn alias_line() -> String {
+    aliases()
+        .iter()
+        .map(|(a, t)| format!("{a} → {t}"))
+        .collect::<Vec<_>>()
+        .join("   ")
 }
 
 fn print_help() {
@@ -128,15 +164,29 @@ fn print_help() {
     println!("    opt version            print the opt version");
     println!("    opt help               print this help");
     println!();
-    println!("APPS:");
+    println!("APPS (routing & packages):");
+    println!(
+        "    {:<9} {:<22} {:<16} {:<16} {}",
+        "app", "bins", "cargo", "aur", "about"
+    );
     for spec in all() {
-        println!("    {:<9} {}   {}", spec.id, spec.mark, spec.about);
+        println!(
+            "    {:<9} {:<22} {:<16} {:<16} {}",
+            spec.id,
+            spec.bins.join(", "),
+            spec.cargo,
+            spec.aur,
+            spec.about
+        );
     }
     println!();
     println!("ALIASES:");
-    println!("    f → files   m → music   file → files");
+    println!("    {}", alias_line());
     println!();
     println!("ENVIRONMENT:");
     println!("    OPTION_BIN_<ID>    force an app binary path (e.g. OPTION_BIN_MUSIC)");
-    println!("    OPTION_PKG            package manager: cargo (default) or yay");
+    println!("    OPTION_PKG            package manager: cargo (default) | yay | paru | pacman");
+    println!();
+    println!("FAMILY METAPACKAGE (Arch):");
+    println!("    opt install family   yay -S option-family   (ou paru/pacman)");
 }

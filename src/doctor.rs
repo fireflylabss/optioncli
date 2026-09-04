@@ -1,9 +1,12 @@
 //! `opt doctor` — check each app's binary and system dependencies.
 
-use crate::apps::{all, find_binary, has_binary};
+use crate::apps::{all, alt_hint, dep_present, find_binary};
 use std::io::{self, IsTerminal, Write};
 
 /// Print a per-app health report: binary present, then each system dep.
+///
+/// Visual only (always succeeds): required deps missing show as
+/// `faltando (req)` with install hints; optional ones as `ausente (opc)`.
 pub fn report() {
     let color = io::stdout().is_terminal() && option_sdk::color_enabled();
     let mut out = io::stdout().lock();
@@ -31,18 +34,49 @@ pub fn report() {
         );
 
         for dep in spec.deps {
-            let present = has_binary(dep.name);
-            let _ = writeln!(
-                out,
-                "  {:>10}  {}  {}",
-                dim(dep.label, color),
-                if present {
-                    ok("ok", color)
-                } else {
-                    missing("faltando", color)
-                },
-                dim(dep.hint, color)
-            );
+            let present = dep_present(dep);
+            let tag = if dep.required { "req" } else { "opc" };
+            if present {
+                let _ = writeln!(
+                    out,
+                    "  {:>10}  {}  {}",
+                    dim(dep.label, color),
+                    ok("ok", color),
+                    dim(&format!("[{tag}]"), color)
+                );
+            } else if dep.required {
+                let (apt, dnf) = alt_hint(dep.name);
+                let _ = writeln!(
+                    out,
+                    "  {:>10}  {}  {}",
+                    dim(dep.label, color),
+                    missing("faltando (req)", color),
+                    dim(&format!("[{tag}]"), color)
+                );
+                let _ = writeln!(out, "  {:>10}  {}", dim("", color), dim(dep.hint, color));
+                let _ = writeln!(
+                    out,
+                    "  {:>10}  {}",
+                    dim("", color),
+                    dim(&format!("apt: {apt} · dnf: {dnf}"), color)
+                );
+            } else {
+                let (apt, dnf) = alt_hint(dep.name);
+                let _ = writeln!(
+                    out,
+                    "  {:>10}  {}  {}",
+                    dim(dep.label, color),
+                    missing("ausente (opc)", color),
+                    dim(&format!("[{tag}]"), color)
+                );
+                let _ = writeln!(out, "  {:>10}  {}", dim("", color), dim(dep.hint, color));
+                let _ = writeln!(
+                    out,
+                    "  {:>10}  {}",
+                    dim("", color),
+                    dim(&format!("apt: {apt} · dnf: {dnf}"), color)
+                );
+            }
         }
     }
 }
