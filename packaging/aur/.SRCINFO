@@ -10,6 +10,6 @@ pkgbase = opt
 	depends = glibc
 	options = !lto
 	source = optioncli-0.1.1.tar.gz::https://github.com/fireflylabss/optioncli/archive/refs/tags/v0.1.1.tar.gz
-	sha256sums = SKIP
+	sha256sums = 24c0b148820be613027b39c018adb2b8af2f3c8ab933e6d874a5a299d071f18f
 
 pkgname = opt
