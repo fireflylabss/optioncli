@@ -20,10 +20,14 @@ Each release heading is the version and date; under it, a short summary ends wit
 Desktop front-end routing via `opt gui`, the `needle` → `search` rename, and the unshipped `notes` route removed. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.2-stable).
 
 - New `opt gui <app> [args...]` verb runs an app's desktop front-end — files → `optionfiles-gtk`/`fls-gtk`, music → `optionmusic-gpui`, search → `optionsearch-gtk`/`needle` — forwarding arguments and mirroring the exit status. Bare `opt gui` lists configured front-ends and their state; `OPTION_GUI_BIN_<ID>` overrides the lookup.
+- `opt gui terminal` runs `optionterm` itself instead of failing, since the app is already its own desktop surface.
+- A missing front-end now names what was searched and the package that actually ships it (`cargo install optionsearch-gui`), and only offers the AUR route when that package really installs the GUI binary — `optionfiles`/`optionmusic` currently package their CLI only.
 - `opt status` appends `+ gui (<bin>)` to apps with a configured front-end, and the menu/help prints a gui routing line next to the aliases.
 - Route table: `needle` → `search` (`optionsearch`, `nld`, `needle` bins; `optionsearch-gtk`, `needle` GUI; cargo `optionsearch-cli`; AUR `optionsearch`), with aliases `s`, `needle`, `nld` → `search`.
 - Removed the `notes` route (`nts`, `nts-gtk`; cargo/AUR `optionnotes`) — the app does not exist; `$EDITOR` stays as an optionFiles dep.
-- `option-family` metapackage depends on `optionsearch` instead of `needle` and drops `optionnotes`.
+- `option-family` metapackage depends on `optionsearch` instead of `needle`, drops `optionnotes`, and ships the `.SRCINFO` the AUR requires.
+- Binary lookup now requires an execute bit, so a non-executable leftover on `PATH` is no longer reported as an installed app.
+- The routing table sizes its columns to the widest entry, keeping the row for `search` aligned in both the menu and `opt help`.
 
 ## v0.1.1-stable · 04/09/2026
 

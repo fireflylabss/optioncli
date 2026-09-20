@@ -1,14 +1,14 @@
 //! Forward the remaining arguments to a resolved app binary, preserving
 //! stdio and the child's exit status.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
 
 /// Run `bin` with `args`, inheriting stdio, and mirror its exit status.
 ///
 /// If the child is terminated by a signal (no conventional exit code), the
 /// shell convention `128 + signal` is used.
-pub fn run(bin: &PathBuf, args: &[String]) -> Result<ExitCode, String> {
+pub fn run(bin: &Path, args: &[String]) -> Result<ExitCode, String> {
     let status = Command::new(bin)
         .args(args)
         .stdin(Stdio::inherit())
@@ -19,7 +19,7 @@ pub fn run(bin: &PathBuf, args: &[String]) -> Result<ExitCode, String> {
 
     Ok(match status.code() {
         Some(code) => ExitCode::from(code as u8),
-        None => ExitCode::from(128 + signal_number(&status)),
+        None => ExitCode::from((128u16 + signal_number(&status) as u16) as u8),
     })
 }
 

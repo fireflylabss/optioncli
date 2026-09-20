@@ -42,6 +42,14 @@ pub struct AppSpec {
     pub cargo: &'static str,
     /// AUR package name (`yay -S <aur>`).
     pub aur: &'static str,
+    /// Cargo package shipping the `gui_bins`, when it differs from `cargo`
+    /// (e.g. `optionsearch-gui` vs the CLI's `optionsearch-cli`).
+    /// Empty when the app has no separate GUI package.
+    pub gui_cargo: &'static str,
+    /// AUR package shipping the `gui_bins`. Empty when no AUR package
+    /// installs them — `optionfiles`/`optionmusic` currently package only
+    /// their CLI binaries, so cargo is the only route to their front-ends.
+    pub gui_aur: &'static str,
     /// System dependencies checked by `opt doctor`.
     pub deps: &'static [SysDep],
     /// True for desktop/GUI apps whose `--version` launches the app instead
@@ -118,15 +126,37 @@ pub fn find_gui_binary(spec: &AppSpec) -> Option<PathBuf> {
 }
 
 /// Search `PATH` for a single executable name, returning its path when found.
+///
+/// A file only counts when it is actually executable, so a non-executable
+/// leftover on `PATH` is never reported as an installed app.
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(name);
-        if candidate.is_file() {
+        if is_executable(&candidate) {
             return Some(candidate);
         }
     }
     None
+}
+
+/// True when `path` is a regular file with an execute bit set.
+fn is_executable(path: &std::path::Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 /// True when `name` is present as an executable on `PATH`.
@@ -271,6 +301,27 @@ pub fn install_hint(spec: &AppSpec) -> String {
     format!("cargo install {}   (ou: yay -S {})", spec.cargo, spec.aur)
 }
 
+/// Installation hint for a missing desktop front-end.
+///
+/// The front-end often lives in its own package (`optionsearch-gui` vs the
+/// CLI's `optionsearch-cli`), and is not always packaged on the AUR — the
+/// `yay` half is only shown when [`AppSpec::gui_aur`] is set.
+///
+/// Returns `None` when the app ships no separate GUI package.
+pub fn gui_install_hint(spec: &AppSpec) -> Option<String> {
+    if spec.gui_cargo.is_empty() {
+        return None;
+    }
+    Some(if spec.gui_aur.is_empty() {
+        format!("cargo install {}", spec.gui_cargo)
+    } else {
+        format!(
+            "cargo install {}   (ou: yay -S {})",
+            spec.gui_cargo, spec.gui_aur
+        )
+    })
+}
+
 const DEP_MPV: SysDep = SysDep {
     name: "mpv",
     label: "mpv (bin)",
@@ -382,6 +433,9 @@ pub static APPS: &[AppSpec] = &[
         about: "terminal file manager",
         cargo: "optionfiles",
         aur: "optionfiles",
+        // The AUR package installs only optionfiles/fls, not the GTK bins.
+        gui_cargo: "optionfiles-gui",
+        gui_aur: "",
         deps: DEP_FILES_SET,
         is_gui: false,
     },
@@ -393,6 +447,9 @@ pub static APPS: &[AppSpec] = &[
         about: "CLI music player",
         cargo: "optionmusic",
         aur: "optionmusic",
+        // The AUR package installs only optionmusic/msc, not the gpui bin.
+        gui_cargo: "optionmusic-gpui",
+        gui_aur: "",
         deps: DEP_MUSIC_SET,
         is_gui: false,
     },
@@ -404,6 +461,8 @@ pub static APPS: &[AppSpec] = &[
         about: "minimal local calendar",
         cargo: "optioncalendar",
         aur: "optioncalendar",
+        gui_cargo: "",
+        gui_aur: "",
         deps: &[],
         is_gui: false,
     },
@@ -415,6 +474,9 @@ pub static APPS: &[AppSpec] = &[
         about: "GTK4 terminal with tiling splits",
         cargo: "optionterm",
         aur: "optionterm",
+        // optionterm is itself the desktop app — see `is_gui`.
+        gui_cargo: "",
+        gui_aur: "",
         deps: DEP_TERM_SET,
         is_gui: true,
     },
@@ -426,6 +488,8 @@ pub static APPS: &[AppSpec] = &[
         about: "small local shell",
         cargo: "opsh",
         aur: "opsh",
+        gui_cargo: "",
+        gui_aur: "",
         deps: &[],
         is_gui: false,
     },
@@ -437,6 +501,8 @@ pub static APPS: &[AppSpec] = &[
         about: "fast syntax-aware cat",
         cargo: "ofat",
         aur: "ofat",
+        gui_cargo: "",
+        gui_aur: "",
         deps: &[],
         is_gui: false,
     },
@@ -448,6 +514,9 @@ pub static APPS: &[AppSpec] = &[
         about: "instant local file search",
         cargo: "optionsearch-cli",
         aur: "optionsearch",
+        // The AUR package ships optionsearch-gtk alongside the CLI.
+        gui_cargo: "optionsearch-gui",
+        gui_aur: "optionsearch",
         deps: &[DEP_PDFTOTEXT],
         is_gui: false,
     },
@@ -527,6 +596,59 @@ mod tests {
             lookup("search").unwrap().gui_bins,
             &["optionsearch-gtk", "needle"]
         );
+    }
+
+    #[test]
+    fn gui_hint_points_at_the_gui_package() {
+        // The front-end lives in its own crate, not the CLI one.
+        let search = lookup("search").unwrap();
+        let hint = gui_install_hint(search).unwrap();
+        assert!(hint.contains("optionsearch-gui"), "{hint}");
+        // optionsearch (AUR) ships optionsearch-gtk, so offer it too.
+        assert!(hint.contains("yay -S optionsearch"), "{hint}");
+    }
+
+    #[test]
+    fn gui_hint_omits_aur_when_unpackaged() {
+        // optionfiles/optionmusic (AUR) install only their CLI binaries.
+        for id in ["files", "music"] {
+            let hint = gui_install_hint(lookup(id).unwrap()).unwrap();
+            assert!(!hint.contains("yay"), "{id}: {hint}");
+            assert!(hint.starts_with("cargo install"), "{id}: {hint}");
+        }
+    }
+
+    #[test]
+    fn gui_hint_absent_without_frontend() {
+        for id in ["cal", "opsh", "fat", "terminal"] {
+            assert!(gui_install_hint(lookup(id).unwrap()).is_none(), "{id}");
+        }
+    }
+
+    #[test]
+    fn non_executable_file_is_not_a_binary() {
+        // `which` must not report a leftover non-executable file as installed.
+        // Checked through `is_executable` so the test never touches $PATH,
+        // which other tests read in parallel.
+        let dir = std::env::temp_dir().join(format!("opt-exec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let plain = dir.join("opt-not-executable");
+        std::fs::write(&plain, b"#!/bin/sh\n").unwrap();
+        assert!(!is_executable(&plain));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(is_executable(&plain));
+        }
+
+        // A directory on PATH is never a runnable binary either.
+        assert!(!is_executable(&dir));
+        assert!(!is_executable(&dir.join("does-not-exist")));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

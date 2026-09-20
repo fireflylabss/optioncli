@@ -13,9 +13,12 @@ mod status;
 mod sys;
 
 use std::env;
+use std::path::Path;
 use std::process::ExitCode;
 
-use apps::{aliases, all, find_binary, find_gui_binary, install_hint, lookup};
+use apps::{
+    AppSpec, aliases, all, find_binary, find_gui_binary, gui_install_hint, install_hint, lookup,
+};
 use run::run;
 
 const MENU_HEADER: &str = "◆ opt — the Option family";
@@ -79,22 +82,35 @@ fn main() -> ExitCode {
     }
 }
 
-/// Run the app matching `app_id`, forwarding the rest of the arguments.
-fn dispatch(app_id: &str, rest: &[String]) -> ExitCode {
-    let Some(spec) = lookup(app_id) else {
+/// Run `bin` with `args`, reporting a spawn failure as an `opt:` error.
+fn run_binary(bin: &Path, args: &[String]) -> ExitCode {
+    match run(bin, args) {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("opt: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Resolve `app_id`, printing the known ids when it is not a family app.
+fn resolve(app_id: &str) -> Option<&'static AppSpec> {
+    let spec = lookup(app_id);
+    if spec.is_none() {
         eprintln!("opt: '{app_id}' não é um app Option conhecido.");
         eprintln!("Apps: {}", known_ids());
+    }
+    spec
+}
+
+/// Run the app matching `app_id`, forwarding the rest of the arguments.
+fn dispatch(app_id: &str, rest: &[String]) -> ExitCode {
+    let Some(spec) = resolve(app_id) else {
         return ExitCode::FAILURE;
     };
 
     match find_binary(spec) {
-        Some(bin) => match run(&bin, rest) {
-            Ok(code) => code,
-            Err(error) => {
-                eprintln!("opt: {error}");
-                ExitCode::FAILURE
-            }
-        },
+        Some(bin) => run_binary(&bin, rest),
         None => {
             eprintln!("opt: '{}' não encontrado.", spec.id);
             eprintln!("       Instale com: {}", install_hint(spec));
@@ -105,29 +121,36 @@ fn dispatch(app_id: &str, rest: &[String]) -> ExitCode {
 
 /// `opt gui <app> [args...]` — run the app's desktop front-end.
 ///
-/// Bare `opt gui` lists the configured front-ends and their state.
+/// Bare `opt gui` lists the configured front-ends and their state. Apps that
+/// are already desktop apps (`is_gui`, e.g. optionTerm) have no separate
+/// front-end, so `opt gui <app>` just runs their only binary.
 fn gui(args: &[String]) -> ExitCode {
     let Some(app_id) = args.first() else {
         gui_list();
         return ExitCode::SUCCESS;
     };
-    let Some(spec) = lookup(app_id) else {
-        eprintln!("opt: '{app_id}' não é um app Option conhecido.");
-        eprintln!("Apps: {}", known_ids());
+    let Some(spec) = resolve(app_id) else {
         return ExitCode::FAILURE;
     };
+    let rest = &args[1..];
+
+    // optionTerm & friends: the app itself is the desktop surface.
+    if spec.gui_bins.is_empty() && spec.is_gui {
+        return dispatch(spec.id, rest);
+    }
 
     match find_gui_binary(spec) {
-        Some(bin) => match run(&bin, &args[1..]) {
-            Ok(code) => code,
-            Err(error) => {
-                eprintln!("opt: {error}");
-                ExitCode::FAILURE
-            }
-        },
+        Some(bin) => run_binary(&bin, rest),
         None => {
             eprintln!("opt: '{}' não tem interface desktop instalada.", spec.id);
-            eprintln!("       Instale com: {}", install_hint(spec));
+            if spec.gui_bins.is_empty() {
+                eprintln!("       Este app não tem front-end desktop separado.");
+            } else {
+                eprintln!("       Procurado: {}", spec.gui_bins.join(", "));
+            }
+            if let Some(hint) = gui_install_hint(spec) {
+                eprintln!("       Instale com: {hint}");
+            }
             ExitCode::FAILURE
         }
     }
@@ -158,7 +181,7 @@ fn print_menu() {
     println!();
     println!("{MENU_HEADER}");
     println!();
-    print_routing_table();
+    print_routing_table("  ");
     println!();
     println!("  status      apps instalados + versões");
     println!("  doctor      dependências de sistema de cada app");
@@ -174,21 +197,28 @@ fn print_menu() {
     println!("  alias  {}", alias_line());
 }
 
-/// Full routing table: id | bins | cargo | AUR | about.
+/// Full routing table: id | bins | cargo | AUR | about, printed with
+/// `indent` leading spaces. Column widths follow the longest cell, so a
+/// long bin list (e.g. search's) never pushes the row out of alignment.
 /// Plain B&W text (no ANSI here); mirrors README "Routing & packages".
-fn print_routing_table() {
+fn print_routing_table(indent: &str) {
+    let bins: Vec<String> = all().iter().map(|s| s.bins.join(", ")).collect();
+    let width = |header: &str, cells: &mut dyn Iterator<Item = &str>| {
+        cells.map(str::len).chain([header.len()]).max().unwrap_or(0)
+    };
+    let w_app = width("app", &mut all().iter().map(|s| s.id));
+    let w_bins = width("bins", &mut bins.iter().map(String::as_str));
+    let w_cargo = width("cargo", &mut all().iter().map(|s| s.cargo));
+    let w_aur = width("aur", &mut all().iter().map(|s| s.aur));
+
     println!(
-        "  {:<9} {:<22} {:<16} {:<16} about",
+        "{indent}{:<w_app$} {:<w_bins$} {:<w_cargo$} {:<w_aur$} about",
         "app", "bins", "cargo", "aur"
     );
-    for spec in all() {
+    for (spec, bins) in all().iter().zip(&bins) {
         println!(
-            "  {:<9} {:<22} {:<16} {:<16} {}",
-            spec.id,
-            spec.bins.join(", "),
-            spec.cargo,
-            spec.aur,
-            spec.about
+            "{indent}{:<w_app$} {:<w_bins$} {:<w_cargo$} {:<w_aur$} {}",
+            spec.id, bins, spec.cargo, spec.aur, spec.about
         );
     }
 }
@@ -227,20 +257,7 @@ fn print_help() {
     println!("    opt help               print this help");
     println!();
     println!("APPS (routing & packages):");
-    println!(
-        "    {:<9} {:<22} {:<16} {:<16} about",
-        "app", "bins", "cargo", "aur"
-    );
-    for spec in all() {
-        println!(
-            "    {:<9} {:<22} {:<16} {:<16} {}",
-            spec.id,
-            spec.bins.join(", "),
-            spec.cargo,
-            spec.aur,
-            spec.about
-        );
-    }
+    print_routing_table("    ");
     println!();
     println!("GUIS (opt gui <app>):");
     println!("    {}", gui_line());
@@ -249,9 +266,18 @@ fn print_help() {
     println!("    {}", alias_line());
     println!();
     println!("ENVIRONMENT:");
-    println!("    OPTION_BIN_<ID>    force an app binary path (e.g. OPTION_BIN_MUSIC)");
-    println!("    OPTION_GUI_BIN_<ID>    force a GUI binary path (e.g. OPTION_GUI_BIN_FILES)");
-    println!("    OPTION_PKG            package manager: cargo (default) | yay | paru | pacman");
+    println!(
+        "    {:<22} force an app binary path (e.g. OPTION_BIN_MUSIC)",
+        "OPTION_BIN_<ID>"
+    );
+    println!(
+        "    {:<22} force a GUI binary path (e.g. OPTION_GUI_BIN_FILES)",
+        "OPTION_GUI_BIN_<ID>"
+    );
+    println!(
+        "    {:<22} package manager: cargo (default) | yay | paru | pacman",
+        "OPTION_PKG"
+    );
     println!();
     println!("FAMILY METAPACKAGE (Arch):");
     println!("    opt install family   yay -S option-family   (ou paru/pacman)");

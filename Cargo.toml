@@ -10,7 +10,7 @@ readme = "README.md"
 homepage = "https://github.com/fireflylabss/optioncli"
 repository = "https://github.com/fireflylabss/optioncli"
 documentation = "https://github.com/fireflylabss/optioncli#readme"
-keywords = ["opt", "option", "cli", "local-first", "dispatch", "front-end"]
+keywords = ["opt", "option", "cli", "local-first", "dispatch"]
 categories = ["command-line-utilities"]
 
 [[bin]]

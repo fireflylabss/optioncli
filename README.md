@@ -64,7 +64,17 @@ CLI (`gui` is a reserved verb, like `status`): files → `optionfiles-gtk`,
 `fls-gtk`; music → `optionmusic-gpui`;
 search → `optionsearch-gtk`, `needle`. Bare `opt gui`
 lists them with their installed state; `OPTION_GUI_BIN_<ID>` overrides
-the lookup.
+the lookup. `opt gui terminal` runs `optionterm` itself, since it is
+already a desktop app.
+
+Front-ends ship in their own packages, so a missing one is reported with
+the package that provides it:
+
+| App | GUI cargo package | GUI on the AUR |
+|-----|-------------------|----------------|
+| files  | `optionfiles-gui` | — (the `optionfiles` package installs only the CLI) |
+| music  | `optionmusic-gpui` | — (the `optionmusic` package installs only the CLI) |
+| search | `optionsearch-gui` | `optionsearch` (ships `optionsearch-gtk`) |
 
 ### Aliases
 
@@ -128,7 +138,7 @@ the system dependencies it needs. Each dep is tagged `[req]` (required) or
 - terminal: `gtk4`, `libadwaita`, `vte-2.91-gtk4` via
   `pkg-config --exists` with a `pacman -Q` fallback (req), plus optional
   `pkg-config` probe note.
-- needle: `pdftotext` (optional; sqlite is embedded, no check needed).
+- search: `pdftotext` (optional; sqlite is embedded, no check needed).
 - cal, opsh, fat: no extra system deps.
 
 Missing required deps show as `faltando (req)`, missing optional ones as
