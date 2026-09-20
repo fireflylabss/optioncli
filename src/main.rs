@@ -17,7 +17,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use apps::{
-    AppSpec, aliases, all, find_binary, find_gui_binary, gui_install_hint, install_hint, lookup,
+    AppSpec, aliases, all, desktop_bins, find_binary, find_desktop_binary, find_gui_binary,
+    gui_install_hint, has_desktop_surface, install_hint, lookup,
 };
 use run::run;
 
@@ -156,18 +157,16 @@ fn gui(args: &[String]) -> ExitCode {
     }
 }
 
-/// List the apps with a desktop front-end configured, and its state.
+/// List every app `opt gui` can open, and its state. Apps that are already
+/// desktop apps are listed under their own binary.
 fn gui_list() {
-    for spec in all() {
-        if spec.gui_bins.is_empty() {
-            continue;
-        }
-        let state = match find_gui_binary(spec) {
+    for spec in all().iter().filter(|s| has_desktop_surface(s)) {
+        let state = match find_desktop_binary(spec) {
             Some(bin) => bin
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| bin.display().to_string()),
-            None => format!("não instalado ({})", spec.gui_bins.join(", ")),
+            None => format!("não instalado ({})", desktop_bins(spec).join(", ")),
         };
         println!("  {:<9} {}", spec.id, state);
     }
@@ -192,9 +191,9 @@ fn print_menu() {
     println!("  version     versão do opt");
     println!("  help        esta ajuda");
     println!();
-    println!("  use    opt <app> [args...]    para rodar um app");
-    println!("  gui    {}", gui_line());
-    println!("  alias  {}", alias_line());
+    println!("  use      opt <app> [args...]    para rodar um app");
+    println!("  desktop  {}", gui_line());
+    println!("  alias    {}", alias_line());
 }
 
 /// Full routing table: id | bins | cargo | AUR | about, printed with
@@ -231,12 +230,13 @@ fn alias_line() -> String {
         .join("   ")
 }
 
-/// `app → gui bins` pairs for the menu / help (apps without GUI omitted).
+/// `app → desktop bins` pairs for the menu / help (apps without any desktop
+/// surface omitted).
 fn gui_line() -> String {
     all()
         .iter()
-        .filter(|s| !s.gui_bins.is_empty())
-        .map(|s| format!("{} → {}", s.id, s.gui_bins.join(", ")))
+        .filter(|s| has_desktop_surface(s))
+        .map(|s| format!("{} → {}", s.id, desktop_bins(s).join(", ")))
         .collect::<Vec<_>>()
         .join("   ")
 }
