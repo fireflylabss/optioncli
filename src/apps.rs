@@ -28,7 +28,7 @@ pub struct SysDep {
 pub struct AppSpec {
     /// Canonical id used on the command line, e.g. `music`.
     pub id: &'static str,
-    /// One-char mark used by optionSDK (◆ ◇ ♪ ⌕ …).
+    /// One-char mark used by optionSDK (◆ ❯ ♪ ◷ ◇ ⌕).
     pub mark: &'static str,
     /// Binary names to try, in order. The first one present on `PATH` wins.
     pub bins: &'static [&'static str],
@@ -73,16 +73,26 @@ pub fn aliases() -> &'static [(&'static str, &'static str)] {
     ALIASES
 }
 
+/// Read `<prefix>_<ID>` as an override path, trimmed.
+///
+/// Surrounding whitespace is stripped so a value pasted with a trailing
+/// space still resolves; an all-whitespace value is treated as unset.
+fn path_override(prefix: &str, id: &str) -> Option<PathBuf> {
+    let raw = std::env::var(format!("{prefix}_{}", id.to_ascii_uppercase())).ok()?;
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
 /// `OPTION_BIN_<ID>` environment override for a binary path.
-fn bin_override(id: &str) -> Option<String> {
+fn bin_override(id: &str) -> Option<PathBuf> {
     // OPTION_BIN_TERMINAL → "terminal"
-    std::env::var(format!("OPTION_BIN_{}", id.to_ascii_uppercase())).ok()
+    path_override("OPTION_BIN", id)
 }
 
 /// `OPTION_GUI_BIN_<ID>` environment override for a GUI binary path.
-fn gui_bin_override(id: &str) -> Option<String> {
+fn gui_bin_override(id: &str) -> Option<PathBuf> {
     // OPTION_GUI_BIN_MUSIC → "optionmusic-gpui"
-    std::env::var(format!("OPTION_GUI_BIN_{}", id.to_ascii_uppercase())).ok()
+    path_override("OPTION_GUI_BIN", id)
 }
 
 /// Look up an app by its canonical id or a short alias.
@@ -105,9 +115,7 @@ pub fn all() -> &'static [AppSpec] {
 /// Returns `None` when no candidate binary is on `PATH`.
 pub fn find_binary(spec: &AppSpec) -> Option<PathBuf> {
     if let Some(path) = bin_override(spec.id) {
-        if !path.trim().is_empty() {
-            return Some(PathBuf::from(path));
-        }
+        return Some(path);
     }
     spec.bins.iter().find_map(|bin| which(bin))
 }
@@ -118,11 +126,39 @@ pub fn find_binary(spec: &AppSpec) -> Option<PathBuf> {
 /// Returns `None` when the app has no `gui_bins` or none is on `PATH`.
 pub fn find_gui_binary(spec: &AppSpec) -> Option<PathBuf> {
     if let Some(path) = gui_bin_override(spec.id) {
-        if !path.trim().is_empty() {
-            return Some(PathBuf::from(path));
-        }
+        return Some(path);
     }
     spec.gui_bins.iter().find_map(|bin| which(bin))
+}
+
+/// True when the app is already its own desktop surface (`is_gui` with no
+/// separate front-end, e.g. optionTerm), so `opt gui <app>` runs `bins`.
+fn is_own_desktop_surface(spec: &AppSpec) -> bool {
+    spec.is_gui && spec.gui_bins.is_empty()
+}
+
+/// True when `opt gui <app>` has anything to run at all.
+pub fn has_desktop_surface(spec: &AppSpec) -> bool {
+    !spec.gui_bins.is_empty() || spec.is_gui
+}
+
+/// The binaries `opt gui <app>` would try, in order — its own `bins` when
+/// the app is already the desktop surface.
+pub fn desktop_bins(spec: &AppSpec) -> &'static [&'static str] {
+    if is_own_desktop_surface(spec) {
+        spec.bins
+    } else {
+        spec.gui_bins
+    }
+}
+
+/// Resolve the binary `opt gui <app>` should run.
+pub fn find_desktop_binary(spec: &AppSpec) -> Option<PathBuf> {
+    if is_own_desktop_surface(spec) {
+        find_binary(spec)
+    } else {
+        find_gui_binary(spec)
+    }
 }
 
 /// Search `PATH` for a single executable name, returning its path when found.
@@ -140,7 +176,12 @@ pub fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// True when `path` is a regular file with an execute bit set.
+/// True when `path` is a regular file the current user can execute.
+///
+/// On Unix this is an execute bit; elsewhere it falls back to a runnable
+/// extension, so a stray `README.txt` on `PATH` is never mistaken for a
+/// binary. Option apps target Unix — the other arm only keeps a
+/// cross-compile honest.
 fn is_executable(path: &std::path::Path) -> bool {
     let Ok(metadata) = std::fs::metadata(path) else {
         return false;
@@ -155,7 +196,11 @@ fn is_executable(path: &std::path::Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        true
+        let ext = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_ascii_lowercase);
+        matches!(ext.as_deref(), Some("exe" | "cmd" | "bat" | "com"))
     }
 }
 
@@ -224,14 +269,18 @@ fn editor_present() -> bool {
             if first.is_empty() {
                 continue;
             }
-            if first.contains('/') {
-                if std::path::Path::new(first).exists() {
+            // A bare name is resolved through PATH; anything with a path
+            // component (`./bin/ed`, `/usr/bin/vi`) is checked in place.
+            // Either way the file has to be runnable, not merely present.
+            let path = std::path::Path::new(first);
+            if path.components().count() > 1 || path.is_absolute() {
+                if is_executable(path) {
                     return true;
                 }
             } else if has_binary(first) {
                 return true;
             }
-            // Set but not installed: fall through to the vi/nano fallback.
+            // Set but not runnable: fall through to the vi/nano fallback.
         }
     }
     has_binary("vi") || has_binary("nano")
@@ -282,9 +331,9 @@ fn pacman_owns(pkg: &str) -> bool {
 
 /// Run `<bin> --version`, returning the first non-empty output line.
 ///
-/// Some binaries print the version on stdout (e.g. `fat 0.1.3`); others use a
+/// Some binaries print the version on stdout (e.g. `fls 0.2.5`); others use a
 /// banner. Capture stdout and return its first trimmed line.
-pub fn binary_version(bin: &PathBuf) -> Option<String> {
+pub fn binary_version(bin: &std::path::Path) -> Option<String> {
     let output = Command::new(bin).arg("--version").output().ok()?;
     if !output.status.success() {
         return None;
@@ -307,19 +356,14 @@ pub fn install_hint(spec: &AppSpec) -> String {
 /// CLI's `optionsearch-cli`), and is not always packaged on the AUR — the
 /// `yay` half is only shown when [`AppSpec::gui_aur`] is set.
 ///
-/// Returns `None` when the app ships no separate GUI package.
+/// Returns `None` when the app ships no separate GUI package at all.
 pub fn gui_install_hint(spec: &AppSpec) -> Option<String> {
-    if spec.gui_cargo.is_empty() {
-        return None;
+    match (spec.gui_cargo, spec.gui_aur) {
+        ("", "") => None,
+        (cargo, "") => Some(format!("cargo install {cargo}")),
+        ("", aur) => Some(format!("yay -S {aur}")),
+        (cargo, aur) => Some(format!("cargo install {cargo}   (ou: yay -S {aur})")),
     }
-    Some(if spec.gui_aur.is_empty() {
-        format!("cargo install {}", spec.gui_cargo)
-    } else {
-        format!(
-            "cargo install {}   (ou: yay -S {})",
-            spec.gui_cargo, spec.gui_aur
-        )
-    })
 }
 
 const DEP_MPV: SysDep = SysDep {
@@ -482,25 +526,12 @@ pub static APPS: &[AppSpec] = &[
     },
     AppSpec {
         id: "opsh",
-        mark: "◆",
+        mark: "❯",
         bins: &["opsh"],
         gui_bins: &[],
         about: "small local shell",
         cargo: "opsh",
         aur: "opsh",
-        gui_cargo: "",
-        gui_aur: "",
-        deps: &[],
-        is_gui: false,
-    },
-    AppSpec {
-        id: "fat",
-        mark: "◆",
-        bins: &["fat"],
-        gui_bins: &[],
-        about: "fast syntax-aware cat",
-        cargo: "ofat",
-        aur: "ofat",
         gui_cargo: "",
         gui_aur: "",
         deps: &[],
@@ -561,7 +592,7 @@ mod tests {
             && a.id != "s"
             && a.id != "needle"
             && a.id != "nld"));
-        assert_eq!(all().len(), 7);
+        assert_eq!(all().len(), 6);
     }
 
     #[test]
@@ -574,7 +605,9 @@ mod tests {
 
     #[test]
     fn bin_override_wins() {
-        // SAFETY: tests serialize env mutation via OPTION_BIN_* names.
+        // SAFETY: OPTION_BIN_FILES is read by no other test, so this
+        // mutation cannot be observed by a test running in parallel, and it
+        // is removed before returning.
         unsafe {
             std::env::set_var("OPTION_BIN_FILES", "/tmp/custom-files");
         }
@@ -620,8 +653,78 @@ mod tests {
 
     #[test]
     fn gui_hint_absent_without_frontend() {
-        for id in ["cal", "opsh", "fat", "terminal"] {
+        for id in ["cal", "opsh", "terminal"] {
             assert!(gui_install_hint(lookup(id).unwrap()).is_none(), "{id}");
+        }
+    }
+
+    #[test]
+    fn gui_hint_offers_aur_only_route() {
+        // A front-end packaged on the AUR but not on crates.io still gets a
+        // hint — the two fields are independent.
+        let spec = AppSpec {
+            gui_cargo: "",
+            gui_aur: "optionsomething",
+            ..*lookup("search").unwrap()
+        };
+        assert_eq!(
+            gui_install_hint(&spec).as_deref(),
+            Some("yay -S optionsomething")
+        );
+    }
+
+    #[test]
+    fn desktop_surface_includes_self_hosted_guis() {
+        // optionTerm has no separate front-end, but `opt gui terminal`
+        // works — so it must appear in the gui listing.
+        let terminal = lookup("terminal").unwrap();
+        assert!(has_desktop_surface(terminal));
+        assert_eq!(desktop_bins(terminal), &["optionterm"]);
+
+        // An app with a real front-end reports that front-end.
+        let files = lookup("files").unwrap();
+        assert!(has_desktop_surface(files));
+        assert_eq!(desktop_bins(files), &["optionfiles-gtk", "fls-gtk"]);
+
+        // CLI-only apps stay out of it.
+        for id in ["cal", "opsh"] {
+            let spec = lookup(id).unwrap();
+            assert!(!has_desktop_surface(spec), "{id}");
+            assert!(desktop_bins(spec).is_empty(), "{id}");
+        }
+    }
+
+    #[test]
+    fn marks_match_the_sdk() {
+        // optionSDK owns the family marks; `opt` must never drift from it.
+        // The path dependency resolves to the sibling checkout, so every
+        // routed app is known to it.
+        for spec in all() {
+            let sdk = option_sdk::App::known(spec.id)
+                .unwrap_or_else(|| panic!("SDK does not know {}", spec.id));
+            assert_eq!(spec.mark, sdk.mark(), "{}", spec.id);
+        }
+    }
+
+    #[test]
+    fn override_is_trimmed() {
+        // SAFETY: OPTION_BIN_CAL is read by no other test, so this mutation
+        // cannot be observed by a test running in parallel, and it is
+        // removed before returning.
+        unsafe {
+            std::env::set_var("OPTION_BIN_CAL", "  /tmp/spaced-cal  ");
+        }
+        let spec = lookup("cal").unwrap();
+        assert_eq!(find_binary(spec), Some(PathBuf::from("/tmp/spaced-cal")));
+
+        // An all-whitespace override counts as unset, so PATH lookup
+        // resumes — whatever it finds, it is never the padded value.
+        unsafe {
+            std::env::set_var("OPTION_BIN_CAL", "   ");
+        }
+        assert_ne!(find_binary(spec), Some(PathBuf::from("   ")));
+        unsafe {
+            std::env::remove_var("OPTION_BIN_CAL");
         }
     }
 
@@ -653,8 +756,8 @@ mod tests {
 
     #[test]
     fn gui_bins_empty_without_frontend() {
-        // cal/opsh/fat have no GUI; terminal's only bin already is one.
-        for id in ["cal", "opsh", "fat", "terminal"] {
+        // cal/opsh have no GUI; terminal's only bin already is one.
+        for id in ["cal", "opsh", "terminal"] {
             assert!(lookup(id).unwrap().gui_bins.is_empty());
         }
     }
@@ -679,7 +782,9 @@ mod tests {
 
     #[test]
     fn gui_bin_override_wins() {
-        // SAFETY: tests serialize env mutation via OPTION_GUI_BIN_* names.
+        // SAFETY: OPTION_GUI_BIN_FILES is read by no other test, so this
+        // mutation cannot be observed by a test running in parallel, and it
+        // is removed before returning.
         unsafe {
             std::env::set_var("OPTION_GUI_BIN_FILES", "/tmp/custom-fls-gtk");
         }

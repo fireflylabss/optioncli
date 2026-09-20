@@ -1,6 +1,6 @@
 [package]
 name = "optioncli"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2024"
 rust-version = "1.85"
 description = "opt — the Option family CLI: dispatch, doctor, install and system utilities"
@@ -18,7 +18,7 @@ name = "opt"
 path = "src/main.rs"
 
 [dependencies]
-optionSDK = "0.1.3"
+optionSDK = { path = "../optionSDK", version = "0.1.5" }
 
 [profile.release]
 lto = true

@@ -15,6 +15,28 @@ Each release heading is the version and date; under it, a short summary ends wit
 
 </details>
 
+## v0.1.4-stable · 20/09/2026
+
+Drops the deprecated `fat` route and picks up opsh's own mark. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.4-stable).
+
+- Removed the `fat` route (`fat` binary; cargo/AUR `ofat`) — the app is deprecated and no longer ships.
+- `opsh` shows `❯` instead of `◆` in the menu, `status` and `doctor`, matching the mark optionSDK 0.1.5 assigns it; every shipped app now has a unique glyph.
+- `option-family` metapackage drops the `ofat` dependency.
+- `opt` now links `optionSDK` through a sibling path dependency like the rest of the family, so marks and app ids can never drift between the checkout and the crate.
+
+## v0.1.3-stable · 20/09/2026
+
+Correctness pass on binary resolution, `$EDITOR` detection and the `opt gui` listing. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.3-stable).
+
+- `OPTION_BIN_<ID>` and `OPTION_GUI_BIN_<ID>` now trim surrounding whitespace, so a value pasted with a stray space resolves instead of failing with “cannot run”; an all-whitespace value is treated as unset and `PATH` lookup resumes.
+- `$EDITOR`/`$VISUAL` detection distinguishes a bare command (resolved on `PATH`) from a path (checked in place) and requires the file to be executable — a relative `bin/ed` is no longer checked against the wrong directory, and a non-executable editor no longer reports as `ok`.
+- Bare `opt gui` lists every app with a desktop surface, so `terminal` finally appears alongside the apps with a separate front-end; the menu and `opt help` list it the same way.
+- The GUI install hint handles a front-end packaged only on the AUR, instead of staying silent whenever there is no cargo crate for it.
+- The menu no longer prints `gui` twice — the routing line is labelled `desktop`.
+- Binary detection on non-Unix targets requires a runnable extension rather than accepting any regular file.
+- `binary_version` takes `&Path` like the rest of the module.
+- New tests cover override trimming, the AUR-only GUI hint, the desktop-surface listing, and a guard asserting `opt`'s app marks never drift from `optionSDK`.
+
 ## v0.1.2-stable · 20/09/2026
 
 Desktop front-end routing via `opt gui`, the `needle` → `search` rename, and the unshipped `notes` route removed. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.2-stable).

@@ -10,14 +10,16 @@ offers family-level tools: `gui`, `status`, `doctor`, `install`, `sys` and
 ```text
 ◆ opt — the Option family
 
-  files     ◇   terminal file manager
+  files     ◆   terminal file manager
   music     ♪   CLI music player
   cal       ◷   minimal local calendar
   terminal  ◇   GTK4 terminal with tiling splits
-  opsh      ◇   small local shell
-  fat       ◇   fast syntax-aware cat
+  opsh      ❯   small local shell
   search    ⌕   instant local file search
 ```
+
+Marks come from `optionSDK` — it owns the family glyphs, and a test keeps
+`opt` from drifting from it.
 
 ## Install
 
@@ -62,10 +64,10 @@ opt music dl https://youtu.be/… --audio
 `opt gui <app> [args...]` runs the app's desktop front-end instead of its
 CLI (`gui` is a reserved verb, like `status`): files → `optionfiles-gtk`,
 `fls-gtk`; music → `optionmusic-gpui`;
-search → `optionsearch-gtk`, `needle`. Bare `opt gui`
-lists them with their installed state; `OPTION_GUI_BIN_<ID>` overrides
-the lookup. `opt gui terminal` runs `optionterm` itself, since it is
-already a desktop app.
+search → `optionsearch-gtk`, `needle`. `opt gui terminal` runs `optionterm`
+itself, since it is already a desktop app. Bare `opt gui` lists every app
+with a desktop surface (including `terminal`) and its installed state;
+`OPTION_GUI_BIN_<ID>` overrides the lookup.
 
 Front-ends ship in their own packages, so a missing one is reported with
 the package that provides it:
@@ -85,7 +87,7 @@ the package that provides it:
 
 | Variable | Meaning |
 |----------|---------|
-| `OPTION_BIN_<ID>` | Force an app's binary path (e.g. `OPTION_BIN_MUSIC`) |
+| `OPTION_BIN_<ID>` | Force an app's binary path (e.g. `OPTION_BIN_MUSIC`); surrounding spaces are trimmed, a blank value is ignored |
 | `OPTION_GUI_BIN_<ID>` | Force an app's GUI binary path (e.g. `OPTION_GUI_BIN_FILES`) |
 | `OPTION_PKG` | `install`/`update` manager: `cargo` (default) \| `yay` \| `paru` \| `pacman` (`aur` = paru if present, else yay) |
 | `NO_COLOR` | Disable color in output (per no-color.org) |
@@ -99,7 +101,6 @@ the package that provides it:
 | cal    | `optioncalendar`, `oca` | — | `optioncalendar` | `optioncalendar` |
 | terminal | `optionterm` | — | `optionterm` | `optionterm` |
 | opsh   | `opsh` | — | `opsh` | `opsh` |
-| fat    | `fat` | — | `ofat` | `ofat` |
 | search | `optionsearch`, `nld`, `needle` | `optionsearch-gtk`, `needle` | `optionsearch-cli` | `optionsearch` |
 
 The first candidate on `PATH` wins; `OPTION_BIN_<ID>` overrides it.
@@ -130,8 +131,10 @@ For each app, `opt doctor` reports whether its binary is installed and checks
 the system dependencies it needs. Each dep is tagged `[req]` (required) or
 `[opc]` (optional):
 
-- files: `xdg-open` (req), `$EDITOR` — `$EDITOR`/`$VISUAL` or `vi`/`nano`
-  fallback (req), `imagemagick` (`magick` or `convert`), clipboard
+- files: `xdg-open` (req), `$EDITOR` — `$EDITOR`/`$VISUAL` (a bare name is
+  resolved on `PATH`, a path is checked in place; either way it has to be
+  executable) or a `vi`/`nano` fallback (req), `imagemagick` (`magick` or
+  `convert`), clipboard
   (`wl-copy`/`xclip`/`xsel`/`pbcopy`), `gio`/`trash` (all optional).
 - music: `mpv` binary + `libmpv` (`ldconfig -p`, `pkg-config --exists mpv`
   or the `mpv` binary; both req), `cava`, `yt-dlp`, `ffmpeg` (optional).
@@ -139,7 +142,7 @@ the system dependencies it needs. Each dep is tagged `[req]` (required) or
   `pkg-config --exists` with a `pacman -Q` fallback (req), plus optional
   `pkg-config` probe note.
 - search: `pdftotext` (optional; sqlite is embedded, no check needed).
-- cal, opsh, fat: no extra system deps.
+- cal, opsh: no extra system deps.
 
 Missing required deps show as `faltando (req)`, missing optional ones as
 `ausente (opc)`, each with a pacman hint plus the apt/dnf equivalents.
