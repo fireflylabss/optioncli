@@ -1,9 +1,9 @@
 //! opt — the Option family CLI.
 //!
 //! `opt <app> [args...]` forwards to the matching app binary. It also offers
-//! family-level commands: `status`, `doctor`, `install`, `sys` and `version`.
-//! It does not implement any app logic itself; it only knows how to find,
-//! install and check each app.
+//! family-level commands: `gui`, `status`, `doctor`, `install`, `sys` and
+//! `version`. It does not implement any app logic itself; it only knows how
+//! to find, install and check each app.
 
 mod apps;
 mod doctor;
@@ -15,7 +15,7 @@ mod sys;
 use std::env;
 use std::process::ExitCode;
 
-use apps::{aliases, all, find_binary, install_hint, lookup};
+use apps::{aliases, all, find_binary, find_gui_binary, install_hint, lookup};
 use run::run;
 
 const MENU_HEADER: &str = "◆ opt — the Option family";
@@ -73,6 +73,8 @@ fn main() -> ExitCode {
             }
         }
         "sys" => sys::dispatch(&args[1..]),
+        // `gui` is a reserved verb (like status/doctor): no app id uses it.
+        "gui" => gui(&args[1..]),
         app_id => dispatch(app_id, &args[1..]),
     }
 }
@@ -101,6 +103,53 @@ fn dispatch(app_id: &str, rest: &[String]) -> ExitCode {
     }
 }
 
+/// `opt gui <app> [args...]` — run the app's desktop front-end.
+///
+/// Bare `opt gui` lists the configured front-ends and their state.
+fn gui(args: &[String]) -> ExitCode {
+    let Some(app_id) = args.first() else {
+        gui_list();
+        return ExitCode::SUCCESS;
+    };
+    let Some(spec) = lookup(app_id) else {
+        eprintln!("opt: '{app_id}' não é um app Option conhecido.");
+        eprintln!("Apps: {}", known_ids());
+        return ExitCode::FAILURE;
+    };
+
+    match find_gui_binary(spec) {
+        Some(bin) => match run(&bin, &args[1..]) {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("opt: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        None => {
+            eprintln!("opt: '{}' não tem interface desktop instalada.", spec.id);
+            eprintln!("       Instale com: {}", install_hint(spec));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// List the apps with a desktop front-end configured, and its state.
+fn gui_list() {
+    for spec in all() {
+        if spec.gui_bins.is_empty() {
+            continue;
+        }
+        let state = match find_gui_binary(spec) {
+            Some(bin) => bin
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| bin.display().to_string()),
+            None => format!("não instalado ({})", spec.gui_bins.join(", ")),
+        };
+        println!("  {:<9} {}", spec.id, state);
+    }
+}
+
 fn known_ids() -> String {
     all().iter().map(|s| s.id).collect::<Vec<_>>().join(", ")
 }
@@ -115,11 +164,13 @@ fn print_menu() {
     println!("  doctor      dependências de sistema de cada app");
     println!("  install     instala a família (ou um app)");
     println!("  update      atualiza a família (ou um app)");
+    println!("  gui         interface desktop de um app");
     println!("  sys         utilitários de sistema");
     println!("  version     versão do opt");
     println!("  help        esta ajuda");
     println!();
     println!("  use    opt <app> [args...]    para rodar um app");
+    println!("  gui    {}", gui_line());
     println!("  alias  {}", alias_line());
 }
 
@@ -127,8 +178,8 @@ fn print_menu() {
 /// Plain B&W text (no ANSI here); mirrors README "Routing & packages".
 fn print_routing_table() {
     println!(
-        "  {:<9} {:<22} {:<16} {:<16} {}",
-        "app", "bins", "cargo", "aur", "about"
+        "  {:<9} {:<22} {:<16} {:<16} about",
+        "app", "bins", "cargo", "aur"
     );
     for spec in all() {
         println!(
@@ -150,12 +201,23 @@ fn alias_line() -> String {
         .join("   ")
 }
 
+/// `app → gui bins` pairs for the menu / help (apps without GUI omitted).
+fn gui_line() -> String {
+    all()
+        .iter()
+        .filter(|s| !s.gui_bins.is_empty())
+        .map(|s| format!("{} → {}", s.id, s.gui_bins.join(", ")))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
 fn print_help() {
     println!("opt — the Option family CLI");
     println!();
     println!("USAGE:");
     println!("    opt                    list family apps");
     println!("    opt <app> [args...]    run an app, forwarding arguments");
+    println!("    opt gui <app> [...]    run an app's desktop front-end");
     println!("    opt status             show installed apps + versions");
     println!("    opt doctor             check each app's system dependencies");
     println!("    opt install [app...]   install the family (or specific apps)");
@@ -166,8 +228,8 @@ fn print_help() {
     println!();
     println!("APPS (routing & packages):");
     println!(
-        "    {:<9} {:<22} {:<16} {:<16} {}",
-        "app", "bins", "cargo", "aur", "about"
+        "    {:<9} {:<22} {:<16} {:<16} about",
+        "app", "bins", "cargo", "aur"
     );
     for spec in all() {
         println!(
@@ -180,11 +242,15 @@ fn print_help() {
         );
     }
     println!();
+    println!("GUIS (opt gui <app>):");
+    println!("    {}", gui_line());
+    println!();
     println!("ALIASES:");
     println!("    {}", alias_line());
     println!();
     println!("ENVIRONMENT:");
     println!("    OPTION_BIN_<ID>    force an app binary path (e.g. OPTION_BIN_MUSIC)");
+    println!("    OPTION_GUI_BIN_<ID>    force a GUI binary path (e.g. OPTION_GUI_BIN_FILES)");
     println!("    OPTION_PKG            package manager: cargo (default) | yay | paru | pacman");
     println!();
     println!("FAMILY METAPACKAGE (Arch):");

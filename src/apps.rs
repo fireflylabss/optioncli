@@ -32,6 +32,10 @@ pub struct AppSpec {
     pub mark: &'static str,
     /// Binary names to try, in order. The first one present on `PATH` wins.
     pub bins: &'static [&'static str],
+    /// Optional desktop front-end binaries, tried in order by `opt gui`.
+    /// Empty when the app has no separate GUI bin — `terminal`'s only
+    /// bin is already the GUI (see `is_gui`).
+    pub gui_bins: &'static [&'static str],
     /// What the app does, for the menu / help.
     pub about: &'static str,
     /// Cargo package name (`cargo install <cargo>`).
@@ -51,6 +55,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("file", "files"),
     ("m", "music"),
     ("c", "cal"),
+    ("s", "search"),
+    ("needle", "search"),
+    ("nld", "search"),
 ];
 
 /// All accepted aliases (alias → canonical id), for help text.
@@ -62,6 +69,12 @@ pub fn aliases() -> &'static [(&'static str, &'static str)] {
 fn bin_override(id: &str) -> Option<String> {
     // OPTION_BIN_TERMINAL → "terminal"
     std::env::var(format!("OPTION_BIN_{}", id.to_ascii_uppercase())).ok()
+}
+
+/// `OPTION_GUI_BIN_<ID>` environment override for a GUI binary path.
+fn gui_bin_override(id: &str) -> Option<String> {
+    // OPTION_GUI_BIN_MUSIC → "optionmusic-gpui"
+    std::env::var(format!("OPTION_GUI_BIN_{}", id.to_ascii_uppercase())).ok()
 }
 
 /// Look up an app by its canonical id or a short alias.
@@ -89,6 +102,19 @@ pub fn find_binary(spec: &AppSpec) -> Option<PathBuf> {
         }
     }
     spec.bins.iter().find_map(|bin| which(bin))
+}
+
+/// Find a concrete desktop front-end binary for an app, respecting
+/// `OPTION_GUI_BIN_*`.
+///
+/// Returns `None` when the app has no `gui_bins` or none is on `PATH`.
+pub fn find_gui_binary(spec: &AppSpec) -> Option<PathBuf> {
+    if let Some(path) = gui_bin_override(spec.id) {
+        if !path.trim().is_empty() {
+            return Some(PathBuf::from(path));
+        }
+    }
+    spec.gui_bins.iter().find_map(|bin| which(bin))
 }
 
 /// Search `PATH` for a single executable name, returning its path when found.
@@ -120,6 +146,7 @@ pub fn has_binary(name: &str) -> bool {
 /// - `gtk4` / `libadwaita` / `vte-2.91`: `pkg-config --exists <module>`,
 ///   falling back to `pacman -Q <pkg>`.
 /// - `gio`: `gio` or `trash` binary.
+///
 /// Everything else falls back to [`has_binary`] on `dep.name`.
 pub fn dep_present(dep: &SysDep) -> bool {
     match dep.name {
@@ -325,13 +352,13 @@ const DEP_PKGCONFIG: SysDep = SysDep {
 const DEP_EDITOR: SysDep = SysDep {
     name: "editor",
     label: "$EDITOR",
-    hint: "editor used by optionFiles / optionNotes ($EDITOR ou vi/nano)",
+    hint: "editor used by optionFiles ($EDITOR ou vi/nano)",
     required: true,
 };
 const DEP_PDFTOTEXT: SysDep = SysDep {
     name: "pdftotext",
     label: "pdftotext",
-    hint: "optional PDF text extraction for Needle previews (pacman -S poppler)",
+    hint: "optional PDF text extraction for optionSearch previews (pacman -S poppler)",
     required: false,
 };
 
@@ -351,6 +378,7 @@ pub static APPS: &[AppSpec] = &[
         id: "files",
         mark: "◆",
         bins: &["optionfiles", "fls"],
+        gui_bins: &["optionfiles-gtk", "fls-gtk"],
         about: "terminal file manager",
         cargo: "optionfiles",
         aur: "optionfiles",
@@ -361,6 +389,7 @@ pub static APPS: &[AppSpec] = &[
         id: "music",
         mark: "♪",
         bins: &["optionmusic", "msc"],
+        gui_bins: &["optionmusic-gpui"],
         about: "CLI music player",
         cargo: "optionmusic",
         aur: "optionmusic",
@@ -368,19 +397,10 @@ pub static APPS: &[AppSpec] = &[
         is_gui: false,
     },
     AppSpec {
-        id: "notes",
-        mark: "◇",
-        bins: &["nts"],
-        about: "local-first markdown notes",
-        cargo: "optionnotes",
-        aur: "optionnotes",
-        deps: &[DEP_EDITOR],
-        is_gui: false,
-    },
-    AppSpec {
         id: "cal",
         mark: "◷",
         bins: &["optioncalendar", "oca"],
+        gui_bins: &[],
         about: "minimal local calendar",
         cargo: "optioncalendar",
         aur: "optioncalendar",
@@ -391,6 +411,7 @@ pub static APPS: &[AppSpec] = &[
         id: "terminal",
         mark: "◇",
         bins: &["optionterm"],
+        gui_bins: &[],
         about: "GTK4 terminal with tiling splits",
         cargo: "optionterm",
         aur: "optionterm",
@@ -401,6 +422,7 @@ pub static APPS: &[AppSpec] = &[
         id: "opsh",
         mark: "◆",
         bins: &["opsh"],
+        gui_bins: &[],
         about: "small local shell",
         cargo: "opsh",
         aur: "opsh",
@@ -411,6 +433,7 @@ pub static APPS: &[AppSpec] = &[
         id: "fat",
         mark: "◆",
         bins: &["fat"],
+        gui_bins: &[],
         about: "fast syntax-aware cat",
         cargo: "ofat",
         aur: "ofat",
@@ -418,12 +441,13 @@ pub static APPS: &[AppSpec] = &[
         is_gui: false,
     },
     AppSpec {
-        id: "needle",
+        id: "search",
         mark: "⌕",
-        bins: &["needle"],
+        bins: &["optionsearch", "nld", "needle"],
+        gui_bins: &["optionsearch-gtk", "needle"],
         about: "instant local file search",
-        cargo: "needle",
-        aur: "needle",
+        cargo: "optionsearch-cli",
+        aur: "optionsearch",
         deps: &[DEP_PDFTOTEXT],
         is_gui: false,
     },
@@ -437,8 +461,8 @@ mod tests {
     fn lookup_known_ids() {
         assert_eq!(lookup("files").unwrap().bins, &["optionfiles", "fls"]);
         assert_eq!(lookup("music").unwrap().cargo, "optionmusic");
-        assert_eq!(lookup("notes").unwrap().bins, &["nts"]);
         assert_eq!(lookup("terminal").unwrap().bins, &["optionterm"]);
+        assert_eq!(lookup("search").unwrap().cargo, "optionsearch-cli");
     }
 
     #[test]
@@ -447,6 +471,9 @@ mod tests {
         assert_eq!(lookup("f").unwrap().id, "files");
         assert_eq!(lookup("m").unwrap().id, "music");
         assert_eq!(lookup("c").unwrap().id, "cal");
+        assert_eq!(lookup("s").unwrap().id, "search");
+        assert_eq!(lookup("needle").unwrap().id, "search");
+        assert_eq!(lookup("nld").unwrap().id, "search");
     }
 
     #[test]
@@ -458,12 +485,14 @@ mod tests {
     #[test]
     fn all_is_canonical_only() {
         // Aliases never appear in the canonical list.
-        assert!(
-            all()
-                .iter()
-                .all(|a| a.id != "file" && a.id != "f" && a.id != "m" && a.id != "c")
-        );
-        assert_eq!(all().len(), 8);
+        assert!(all().iter().all(|a| a.id != "file"
+            && a.id != "f"
+            && a.id != "m"
+            && a.id != "c"
+            && a.id != "s"
+            && a.id != "needle"
+            && a.id != "nld"));
+        assert_eq!(all().len(), 7);
     }
 
     #[test]
@@ -484,6 +513,61 @@ mod tests {
         assert_eq!(find_binary(spec), Some(PathBuf::from("/tmp/custom-files")));
         unsafe {
             std::env::remove_var("OPTION_BIN_FILES");
+        }
+    }
+
+    #[test]
+    fn gui_bins_registered() {
+        assert_eq!(
+            lookup("files").unwrap().gui_bins,
+            &["optionfiles-gtk", "fls-gtk"]
+        );
+        assert_eq!(lookup("music").unwrap().gui_bins, &["optionmusic-gpui"]);
+        assert_eq!(
+            lookup("search").unwrap().gui_bins,
+            &["optionsearch-gtk", "needle"]
+        );
+    }
+
+    #[test]
+    fn gui_bins_empty_without_frontend() {
+        // cal/opsh/fat have no GUI; terminal's only bin already is one.
+        for id in ["cal", "opsh", "fat", "terminal"] {
+            assert!(lookup(id).unwrap().gui_bins.is_empty());
+        }
+    }
+
+    #[test]
+    fn gui_is_not_an_app_id() {
+        // `gui` is a reserved verb (like status/doctor), never an app id.
+        assert!(lookup("gui").is_none());
+    }
+
+    #[test]
+    fn search_metadata() {
+        // crates.io `needle` is a third-party crate; ours is `optionsearch-cli`.
+        // `nld`/`needle` stay as compat bins for the rename.
+        let search = lookup("search").unwrap();
+        assert_eq!(search.bins, &["optionsearch", "nld", "needle"]);
+        assert_eq!(search.gui_bins, &["optionsearch-gtk", "needle"]);
+        assert_eq!(search.cargo, "optionsearch-cli");
+        assert_eq!(search.aur, "optionsearch");
+        assert_eq!(lookup("needle").unwrap().id, "search");
+    }
+
+    #[test]
+    fn gui_bin_override_wins() {
+        // SAFETY: tests serialize env mutation via OPTION_GUI_BIN_* names.
+        unsafe {
+            std::env::set_var("OPTION_GUI_BIN_FILES", "/tmp/custom-fls-gtk");
+        }
+        let spec = lookup("files").unwrap();
+        assert_eq!(
+            find_gui_binary(spec),
+            Some(PathBuf::from("/tmp/custom-fls-gtk"))
+        );
+        unsafe {
+            std::env::remove_var("OPTION_GUI_BIN_FILES");
         }
     }
 

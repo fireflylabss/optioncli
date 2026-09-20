@@ -1,6 +1,6 @@
 # Maintainer: Gabriel <horizzon3507>
 pkgname=opt
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc='Option family CLI: dispatch, doctor, install and system utilities'
 arch=('x86_64')
@@ -10,7 +10,7 @@ depends=('gcc-libs' 'glibc')
 makedepends=('cargo')
 options=('!lto')
 source=("optioncli-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('24c0b148820be613027b39c018adb2b8af2f3c8ab933e6d874a5a299d071f18f')
+sha256sums=('SKIP')
 
 prepare() {
   cd "optioncli-$pkgver"

@@ -19,7 +19,7 @@ pub fn run(bin: &PathBuf, args: &[String]) -> Result<ExitCode, String> {
 
     Ok(match status.code() {
         Some(code) => ExitCode::from(code as u8),
-        None => ExitCode::from((128 + signal_number(&status)) as u8),
+        None => ExitCode::from(128 + signal_number(&status)),
     })
 }
 

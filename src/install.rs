@@ -109,11 +109,7 @@ fn update_arch_family(pm: PackageManager) {
 fn run_helper_update(pm: PackageManager, pkgs: &[String]) {
     let helper = pm.helper_bin();
     let mut cmd = Command::new(helper);
-    if matches!(pm, PackageManager::Pacman) {
-        cmd.arg("-Syu").arg("--noconfirm");
-    } else {
-        cmd.arg("-Syu").arg("--noconfirm");
-    }
+    cmd.arg("-Syu").arg("--noconfirm");
     cmd.args(pkgs);
     match cmd.status() {
         Ok(status) if status.success() => println!("    ok (atualizado)"),

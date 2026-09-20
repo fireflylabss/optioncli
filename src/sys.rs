@@ -41,7 +41,7 @@ fn clean() -> ExitCode {
             let cache = option_sdk::App::known(spec.id)
                 .map(|app| app.cache_dir())
                 .unwrap_or_else(|| {
-                    // Apps not in the SDK (e.g. needle) still use <id>/cache.
+                    // Apps not in the SDK still use <id>/cache.
                     option_sdk::option_root().join(spec.id).join("cache")
                 });
             if cache.is_dir() {

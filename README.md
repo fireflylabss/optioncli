@@ -4,19 +4,19 @@
 
 It is a thin dispatcher in the spirit of `git` / `cargo`: `opt <app> [args...]`
 forwards to the matching app binary and mirrors its exit status. It also
-offers family-level tools: `status`, `doctor`, `install`, `sys` and `version`.
+offers family-level tools: `gui`, `status`, `doctor`, `install`, `sys` and
+`version`.
 
 ```text
 ◆ opt — the Option family
 
   files     ◇   terminal file manager
   music     ♪   CLI music player
-  notes     ◇   local-first markdown notes
   cal       ◷   minimal local calendar
   terminal  ◇   GTK4 terminal with tiling splits
   opsh      ◇   small local shell
   fat       ◇   fast syntax-aware cat
-  needle    ⌕   instant local file search
+  search    ⌕   instant local file search
 ```
 
 ## Install
@@ -38,6 +38,7 @@ cargo run --release -- status
 ```bash
 opt                        # list the family
 opt files                  # run optionFiles interactively
+opt gui files              # open the desktop file manager
 opt music play song.mp3 -v 80
 opt status                 # installed apps + versions
 opt doctor                 # check each app's system dependencies
@@ -58,33 +59,43 @@ opt files list "/tmp/com espaço"
 opt music dl https://youtu.be/… --audio
 ```
 
+`opt gui <app> [args...]` runs the app's desktop front-end instead of its
+CLI (`gui` is a reserved verb, like `status`): files → `optionfiles-gtk`,
+`fls-gtk`; music → `optionmusic-gpui`;
+search → `optionsearch-gtk`, `needle`. Bare `opt gui`
+lists them with their installed state; `OPTION_GUI_BIN_<ID>` overrides
+the lookup.
+
 ### Aliases
 
-`f` → `files`, `file` → `files`, `m` → `music`, `c` → `cal`.
+`f` → `files`, `file` → `files`, `m` → `music`, `c` → `cal`,
+`s` → `search`, `needle` → `search`, `nld` → `search`.
 
 ### Environment
 
 | Variable | Meaning |
 |----------|---------|
 | `OPTION_BIN_<ID>` | Force an app's binary path (e.g. `OPTION_BIN_MUSIC`) |
+| `OPTION_GUI_BIN_<ID>` | Force an app's GUI binary path (e.g. `OPTION_GUI_BIN_FILES`) |
 | `OPTION_PKG` | `install`/`update` manager: `cargo` (default) \| `yay` \| `paru` \| `pacman` (`aur` = paru if present, else yay) |
 | `NO_COLOR` | Disable color in output (per no-color.org) |
 
 ### Routing & packages
 
-| App    | Binary candidates | cargo | AUR |
-|--------|-------------------|-------|-----|
-| files  | `optionfiles`, `fls` | `optionfiles` | `optionfiles` |
-| music  | `optionmusic`, `msc` | `optionmusic` | `optionmusic` |
-| notes  | `nts` | `optionnotes` | `optionnotes` |
-| cal    | `optioncalendar`, `oca` | `optioncalendar` | `optioncalendar` |
-| terminal | `optionterm` | `optionterm` | `optionterm` |
-| opsh   | `opsh` | `opsh` | `opsh` |
-| fat    | `fat` | `ofat` | `ofat` |
-| needle | `needle` | `needle` | `needle` |
+| App    | Binary candidates | GUI (`opt gui`) | cargo | AUR |
+|--------|-------------------|-----------------|-------|-----|
+| files  | `optionfiles`, `fls` | `optionfiles-gtk`, `fls-gtk` | `optionfiles` | `optionfiles` |
+| music  | `optionmusic`, `msc` | `optionmusic-gpui` | `optionmusic` | `optionmusic` |
+| cal    | `optioncalendar`, `oca` | — | `optioncalendar` | `optioncalendar` |
+| terminal | `optionterm` | — | `optionterm` | `optionterm` |
+| opsh   | `opsh` | — | `opsh` | `opsh` |
+| fat    | `fat` | — | `ofat` | `ofat` |
+| search | `optionsearch`, `nld`, `needle` | `optionsearch-gtk`, `needle` | `optionsearch-cli` | `optionsearch` |
 
 The first candidate on `PATH` wins; `OPTION_BIN_<ID>` overrides it.
 The same table is printed by `opt` (menu) and `opt help`.
+`needle`/`nld` stay as compat aliases of the `needle` → `optionSearch`
+rename (`opt needle` resolves to `search`).
 
 ### `install` / `update`
 
@@ -114,7 +125,6 @@ the system dependencies it needs. Each dep is tagged `[req]` (required) or
   (`wl-copy`/`xclip`/`xsel`/`pbcopy`), `gio`/`trash` (all optional).
 - music: `mpv` binary + `libmpv` (`ldconfig -p`, `pkg-config --exists mpv`
   or the `mpv` binary; both req), `cava`, `yt-dlp`, `ffmpeg` (optional).
-- notes: `$EDITOR` (req).
 - terminal: `gtk4`, `libadwaita`, `vte-2.91-gtk4` via
   `pkg-config --exists` with a `pacman -Q` fallback (req), plus optional
   `pkg-config` probe note.
