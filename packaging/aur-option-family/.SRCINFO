@@ -1,7 +1,7 @@
 pkgbase = option-family
 	pkgdesc = Option family metapackage: opt dispatcher plus every Option app
-	pkgver = 0.1.3
-	pkgrel = 2
+	pkgver = 0.1.4
+	pkgrel = 1
 	url = https://github.com/fireflylabss/optioncli
 	arch = any
 	license = Apache-2.0
