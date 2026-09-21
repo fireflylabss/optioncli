@@ -5,14 +5,9 @@
 //! `opt install` with no args installs the whole family; `opt update`
 //! reinstalls with `cargo install --force` (cargo) or refresh-upgrades
 //! the family AUR packages (`<helper> -Syu --noconfirm <pkgs...>`).
-//! `opt install family` installs the `option-family` AUR metapackage
-//! (all apps in one transaction) when using an Arch helper.
 
 use crate::apps::{AppSpec, all, lookup};
 use std::process::{Command, ExitCode};
-
-/// AUR metapackage pulling the whole family in one transaction.
-const FAMILY_META: &str = "option-family";
 
 /// Install all family apps with the chosen package manager.
 pub fn install_all() {
@@ -36,27 +31,14 @@ fn install_all_verb(verb: &str) {
 }
 
 /// Install or update the listed apps, validating ids first.
-///
-/// The special id `family` installs the `option-family` metapackage
-/// on Arch helpers, or every app via cargo otherwise.
 pub fn install_many(ids: &[String], verb: &str) -> ExitCode {
     let pm = PackageManager::detect();
-    if ids.iter().any(|id| id == "family") {
-        install_family_meta(pm, verb);
-        // Keep processing any other ids given alongside `family`.
-        let rest: Vec<String> = ids.iter().filter(|id| *id != "family").cloned().collect();
-        if rest.is_empty() {
-            return ExitCode::SUCCESS;
-        }
-        return install_many(&rest, verb);
-    }
     let mut ok = true;
     for id in ids {
         match lookup(id) {
             Some(spec) => install_one(spec, pm, verb),
             None => {
                 eprintln!("opt: '{id}' não é um app Option conhecido.");
-                eprintln!("      (dica: 'family' instala o metapacote option-family no AUR)");
                 ok = false;
             }
         }
@@ -65,36 +47,6 @@ pub fn install_many(ids: &[String], verb: &str) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
-    }
-}
-
-fn install_family_meta(pm: PackageManager, verb: &str) {
-    match pm {
-        PackageManager::Cargo => {
-            println!("==> cargo {verb} (família: cada app)");
-            for spec in all() {
-                install_one(spec, pm, verb);
-            }
-        }
-        _ => {
-            let helper = pm.helper_bin();
-            if verb == "update" {
-                println!("==> {helper} -Syu --noconfirm {FAMILY_META}");
-                run_helper_update(pm, &[FAMILY_META.to_string()]);
-            } else {
-                println!("==> {helper} -S --noconfirm {FAMILY_META}");
-                let status = Command::new(helper)
-                    .args(["-S", "--noconfirm", FAMILY_META])
-                    .status();
-                match status {
-                    Ok(status) if status.success() => println!("    ok family"),
-                    Ok(status) => {
-                        eprintln!("    falhou (exit {})", status.code().unwrap_or(1));
-                    }
-                    Err(e) => eprintln!("    erro: {e}"),
-                }
-            }
-        }
     }
 }
 

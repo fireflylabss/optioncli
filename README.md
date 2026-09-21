@@ -113,7 +113,6 @@ rename (`opt needle` resolves to `search`).
 ```bash
 opt install            # whole family (cargo install <each>)
 opt install music      # one app
-opt install family     # AUR metapackage: yay -S option-family
 opt update             # cargo install --force <each> | yay -Syu <family pkgs>
 opt update music       # update one app
 ```
@@ -121,9 +120,6 @@ opt update music       # update one app
 With `OPTION_PKG=yay|paru`, `install` runs `<helper> -S --noconfirm <aur>`
 and `update` runs `<helper> -Syu --noconfirm <aur...>` (a real refresh
 upgrade, not a reinstall). `OPTION_PKG=pacman` uses `sudo pacman -S/-Syu`.
-`opt install family` installs the `option-family` metapackage
-(`packaging/aur-option-family/PKGBUILD`: depends on `opt` + all apps)
-in a single AUR transaction; under cargo it just installs every app.
 
 ### `doctor`
 

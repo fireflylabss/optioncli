@@ -279,6 +279,4 @@ fn print_help() {
         "OPTION_PKG"
     );
     println!();
-    println!("FAMILY METAPACKAGE (Arch):");
-    println!("    opt install family   yay -S option-family   (ou paru/pacman)");
 }

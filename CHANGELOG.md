@@ -15,6 +15,13 @@ Each release heading is the version and date; under it, a short summary ends wit
 
 </details>
 
+## v0.1.5-stable · 20/09/2026
+
+Drops the `option-family` AUR metapackage route. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.5-stable).
+
+- Removed the special `family` id from `opt install`/`opt update` — the `option-family` metapackage is no longer published on the AUR, so the route would only fail. `opt install` with no args still installs every app, and `opt update` still refresh-upgrades the per-app AUR packages.
+- The `packaging/aur-option-family/` recipe and the menu/help mentions went with it.
+
 ## v0.1.4-stable · 20/09/2026
 
 Drops the deprecated `fat` route and picks up opsh's own mark. This version was made for CLI with a stable release channel on 20/09/2026 (v0.1.4-stable).
